@@ -1,0 +1,324 @@
+<!doctype>
+<html>
+
+<head>
+    <meta http-equiv="content-type" content="application/xhtml+xml; charset=utf-8" />
+</head>
+<style>
+    svg {
+        box-sizing: border-box;
+        border: 1px solid rgb(212, 212, 212);
+        background: rgb(240, 240, 240);
+    }
+
+    circle {
+        stroke: rgb(95, 176, 228);
+        stroke-width: 2;
+        fill: rgba(205, 246, 255, 0.3);
+    }
+
+    .horizontal,
+    .vertical {
+        stroke: white;
+        stroke-width: 1px;
+        shape-rendering: crispEdges;
+    }
+</style>
+
+<body>
+    <script src="lib/d3.v4.min.js" charset="utf-8"></script>
+    <script src="lib/shapeTween.js" charset="utf-8"></script>
+    <script>
+        window.addEventListener('resize', onWindowResize, false);
+        var selected = undefined;
+        function onWindowResize( event ) {
+            init();
+        }
+        
+        init();
+
+        function init() {
+            var w = window,
+                d = document,
+                e = d.documentElement,
+                g = d.getElementsByTagName('body')[0],
+                x = w.innerWidth || e.clientWidth || g.clientWidth,
+                y = w.innerHeight || e.clientHeight || g.clientHeight;
+
+            var resolution = 20,
+                width = x - resolution,
+                height = y - resolution,
+                r = 15;
+
+            d3.select('svg').remove();
+            var svg = d3.select('body').append('svg')
+                .attr('width', width)
+                .attr('height', height);
+
+            svg.selectAll('.vertical')
+                .data(d3.range(1, width / resolution))
+                .enter().append('line')
+                .attr('class', 'vertical')
+                .attr('x1', function (d) { return d * resolution; })
+                .attr('y1', 0)
+                .attr('x2', function (d) { return d * resolution; })
+                .attr('y2', height);
+
+            svg.selectAll('.horizontal')
+                .data(d3.range(1, height / resolution))
+                .enter().append('line')
+                .attr('class', 'horizontal')
+                .attr('x1', 0)
+                .attr('y1', function (d) { return d * resolution; })
+                .attr('x2', width)
+                .attr('y2', function (d) { return d * resolution; });
+
+            var lineLength = height / 3;
+            var legendWidth = width / 4;
+            var poly = undefined;
+            var angle = undefined;
+            var angleRad = undefined;
+            var angleOut = undefined;
+            var angleOutRad = undefined;
+            var points = [];
+
+            function drawArcs(polygon) {
+                if (typeof polygon === 'undefined')
+                    polygon = poly;
+                function getD(inRad, outRadOffset, startAngle, endAngle) {
+                    return d3.arc()
+                        .innerRadius(inRad)
+                        .outerRadius(inRad + outRadOffset)
+                        .startAngle(startAngle)
+                        .endAngle(endAngle)();
+                }
+
+                polygon
+                    .append('path')
+                    .attr('d',
+                    getD(
+                        lineLength * 0.2, 1,
+                        Math.PI / 2, Math.PI / 2 - angleRad
+                    ))
+                    .style('stroke','red')
+                    .attr('class','arc');
+                polygon
+                    .append('path')
+                    .attr('d',
+                    getD(
+                        lineLength * 0.18, 1,
+                        Math.PI + Math.PI / 2,
+                        Math.PI + Math.PI / 2 + angleOutRad
+                    ))
+                    .attr('transform', `translate(${lineLength}, 0)`)
+                    .style('stroke', 'purple')
+                    .attr('class','arc');
+
+                var arcOut2AngleStart = 3 * Math.PI / 2;
+                polygon
+                    .append('path')
+                    .attr('d',
+                    getD(
+                        lineLength * 0.08, 1,
+                        arcOut2AngleStart + angleOutRad,
+                        arcOut2AngleStart - angleOutRad
+                    ))
+                    .attr('transform',
+                    `rotate(${-angle}), translate(${lineLength}, 0)`)
+                    .style('stroke', 'blue')
+                    .attr('stroke-width', 1)
+                    .attr('class', 'arc');
+            }
+
+            function drawLabels(polygon) {
+                if (typeof polygon === 'undefined')
+                    polygon = poly;
+                var f = d3.format('.1f');
+                polygon
+                    .append('text')
+                    .text(f(angle) + "°")
+                    .attr('y', -lineLength * 0.22 * Math.sin(angleRad / 2))
+                    .attr('x', lineLength * 0.22 * Math.cos(angleRad / 2))
+                    .attr('text-anchor', 'start')
+                    .style('font-size', 14)
+                    .style('font-family', 'monospace')
+                    .attr('class', 'label');
+
+                polygon
+                    .append("text")
+                    .text(f(angleOut) + "°")
+                    .attr("y", -lineLength * 0.22 * Math.sin(angleOutRad / 2))
+                    .attr("x", lineLength - lineLength * 0.22 * Math.cos(angleOutRad / 2))
+                    .attr('text-anchor', "end")
+                    .style("font-size", 14)
+                    .style("font-family", "monospace")
+                    .attr('class', 'label');
+
+                polygon
+                    .append('text')
+                    .text(f(angleOut * 2) + "°  ")
+                    .attr('y', -lineLength * 0.77 * Math.sin(angleRad))
+                    .attr('x', lineLength * (0.77 * Math.cos(angleRad)))
+                    .attr('text-anchor', 'middle')
+                    .style('font-size', 14)
+                    .style('font-family', 'monospace')
+                    .attr('class', 'label');
+                
+                polygon
+                    .append('text')
+                    .text('ϴ')
+                    .attr('y', lineLength * 0.05)
+                    .attr('x', -lineLength * 0.05)
+                    .attr('text-anchor', 'middle')
+                    .style('font-size', 14)
+                    .style('font-family', 'monospace')
+                    .attr('class', 'label');
+                
+            }
+            var lineFunction = d3.line()
+                .x(function(d) { return d.x; })
+                .y(function(d) { return d.y; });
+
+            function idOf(i) {
+                return (i >= 26 ? idOf((i / 26 >> 0) - 1) : '') +  'abcdefghijklmnopqrstuvwxyz'[i % 26 >> 0];
+            }
+
+            function drawPoly(count) {
+                if (poly) {
+                    poly.selectAll('.label').remove();
+                    poly.selectAll('.arc').remove();
+                    poly.remove();
+                }
+
+                var newPoly = svg.append('g');
+                angle = 360 / count;
+                angleRad = Math.PI * angle / 180;
+                angleOut = (180 - angle) / 2;
+                angleOutRad = Math.PI * angleOut / 180;
+                newPoints = [];
+                for (var i = 0; i < count; i++) {
+                    var color = i == 0 || i == count - 1 ? 'red' : '#888';
+                    newPoly
+                        .append('line')
+                        .attr('stroke', color)
+                        .attr('x1', 0)
+                        .attr('y1', 0)
+                        .attr('x2', lineLength)
+                        .attr('y2', 0)
+                        .attr('transform', `rotate(${angle * i})`);
+
+                    newPoly
+                        .append('line')
+                        .attr('stroke', i == 0 || i == count -1 ? 'blue' : 'black')
+                        .attr('x1', lineLength)
+                        .attr('y1', 0)
+                        .attr('x2', Math.cos(angleRad) * lineLength)
+                        .attr('y2', -Math.sin(angleRad) * lineLength)
+                        .attr('transform', `rotate(${angle * i})`);
+
+                    newPoly
+                        .append('text')
+                        .text(idOf(i).toUpperCase())
+                        .attr('y', -Math.sin(angleRad*i)*lineLength * 1.05)
+                        .attr('x', Math.cos(angleRad*i)*lineLength * 1.05)
+                        .attr('text-anchor', 'middle')
+                        .style('font-size', 14)
+                        .style('font-family', 'monospace')
+                        .attr('class', 'label');
+
+                    // newPoints.push({x: Math.cos(angleRad*i)*lineLength, y: -Math.sin(angleRad*i)*lineLength})
+                }
+
+                // if(newPoints.length > 0)
+                //     newPoints.push(newPoints[0]);
+
+                // newPoly.append("path")
+                //     .attr('d', lineFunction(newPoints))
+                //     .attr('stroke', function(d,i) {
+                //         if(i==0 || i==1) {
+                //             return 'blue';
+                //         }
+                //         else {
+                //             return 'black';
+                //         }
+                //     })
+                //     .attr('stroke-width', 1)
+                //     .attr('fill', 'none')
+                //     .transition()
+                //     .duration(2000);
+                
+                drawArcs(newPoly);
+                drawLabels(newPoly);
+
+                newPoly
+                    .attr(
+                    'transform',
+                    `translate(${(width - legendWidth) / 2},${height / 2})`);
+
+                if (typeof poly !== 'undefined')
+                    shapeTweenSides(poly, newPoly);
+                    
+                poly = newPoly;
+            }
+
+            var hovered = undefined
+                selected = undefined;
+            d3.csv('polyNames.csv', function (data) {
+                var nameG = svg.append('g')
+                var labels = nameG
+                    .selectAll('g')
+                    .data(data)
+                    .enter()
+                    .append('text')
+                    .text(function (d, i) {
+                        return d.name + " (" + (i + 3) + ")"
+                    })
+                    .attr('transform', (d, i) => {
+                        return `translate(0, ${i * 20})`
+                    })
+                    .style('font-size', 12)
+                    .style('font-family', 'monospace')
+                    .style('cursor', 'pointer')
+                    .on('click', function (d, i) {
+                        drawPoly(i + 3)
+                        labels.style('fill', 'black')
+                        d3.select(this).style('fill', 'red')
+                        selected = i;
+                        hovered = undefined;
+                    })
+                    .on('mouseover', function (d, i) {
+                        if(i != selected) {
+                            hovered = d3.select(this);
+                            hovered.style('fill', 'gray');
+                        }
+                    })
+                    .on('mouseout', function(d, i) {
+                        if(typeof hovered !== 'undefined')
+                            hovered.style('fill', 'black');                        
+                    });
+                
+                if(typeof selected == 'undefined') {
+                    labels.filter(function (d, i) {
+                        if (i === 0) {
+                            d3.select(this).on('click').call(this, d, i);
+                        }
+                    })
+                }
+                else
+                {
+                    drawPoly(selected);
+                }
+
+                nameG
+                    .attr(
+                    'transform',
+                    `translate(
+                        ${width - legendWidth},
+                        ${(height - data.length * 20) / 2}
+                    )`)
+            });
+        }
+    </script>
+</body>
+
+</html>
